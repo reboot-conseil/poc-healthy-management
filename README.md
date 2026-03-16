@@ -72,7 +72,7 @@ Système de captation audio, transcription, diarisation et analyse des échanges
 | Couche | Technologie |
 |---|---|
 | Frontend | React 18 + TypeScript |
-| Backend | Python 3.11 + FastAPI |
+| Backend | Python 3.12 + FastAPI |
 | Pipeline IA | LangChain + LangGraph |
 | Transcription & Diarisation | Assembly AI API |
 | Base de données | PostgreSQL |
