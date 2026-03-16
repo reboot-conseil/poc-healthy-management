@@ -1,0 +1,116 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 224 20% 6%;
+    --foreground: 220 15% 88%;
+
+    --card: 224 20% 9%;
+    --card-foreground: 220 15% 88%;
+
+    --popover: 224 20% 9%;
+    --popover-foreground: 220 15% 88%;
+
+    --primary: 217 91% 65%;
+    --primary-foreground: 224 20% 6%;
+
+    --secondary: 224 20% 14%;
+    --secondary-foreground: 220 15% 75%;
+
+    --muted: 224 20% 14%;
+    --muted-foreground: 220 10% 50%;
+
+    --accent: 217 91% 65%;
+    --accent-foreground: 224 20% 6%;
+
+    --destructive: 0 72% 58%;
+    --destructive-foreground: 220 15% 88%;
+
+    --border: 224 20% 14%;
+    --input: 224 20% 14%;
+    --ring: 217 91% 65%;
+
+    --radius: 0.4rem;
+  }
+
+  * {
+    @apply border-border box-border;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: 'Syne', sans-serif;
+  }
+}
+
+@layer utilities {
+  .glow-blue {
+    box-shadow: 0 0 30px rgba(99, 153, 255, 0.2);
+  }
+
+  .glow-red {
+    box-shadow: 0 0 30px rgba(239, 68, 68, 0.3);
+  }
+
+  .recording-pulse {
+    animation: recording-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes recording-pulse {
+    0%,
+    100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.4;
+      transform: scale(0.85);
+    }
+  }
+
+  .fade-in {
+    animation: fade-in 0.35s ease-out forwards;
+  }
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .slide-up {
+    animation: slide-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+
+  @keyframes slide-up {
+    from {
+      opacity: 0;
+      transform: translateY(16px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .stagger-1 { animation-delay: 50ms; }
+  .stagger-2 { animation-delay: 100ms; }
+  .stagger-3 { animation-delay: 150ms; }
+  .stagger-4 { animation-delay: 200ms; }
+}
