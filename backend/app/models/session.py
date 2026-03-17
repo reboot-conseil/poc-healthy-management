@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from enum import StrEnum
 
 from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
@@ -7,10 +8,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
 
-# Allowed status transitions:
-#   recording → processing → done
-#                          → error
-_VALID_STATUSES = {"recording", "processing", "done", "error"}
+
+class SessionStatus(StrEnum):
+    """Allowed session status values and their transitions.
+
+    recording → processing → done
+                           → error
+    """
+
+    RECORDING  = "recording"
+    PROCESSING = "processing"
+    DONE       = "done"
+    ERROR      = "error"
 
 
 class Session(Base):
@@ -29,11 +38,10 @@ class Session(Base):
         nullable=False,
     )
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # recording | processing | done | error
     status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
-        default="recording",
+        default=SessionStatus.RECORDING,
     )
     # Filesystem path to the saved audio file (set after upload)
     audio_path: Mapped[str | None] = mapped_column(Text, nullable=True)

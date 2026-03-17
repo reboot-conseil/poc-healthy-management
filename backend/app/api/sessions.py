@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.database import AsyncSessionLocal, get_db
-from app.models.session import Session
+from app.models.session import Session, SessionStatus
 from app.models.utterance import Utterance
 from app.pipeline.graph import PipelineState, transcribe_node
 from app.pipeline.transcription import TranscriptionError
@@ -83,7 +83,7 @@ async def get_session(
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    if session.status == "processing":
+    if session.status == SessionStatus.PROCESSING:
         response.status_code = 202
 
     return session
@@ -95,12 +95,12 @@ async def upload_audio(
     file: UploadFile,
     background_tasks: BackgroundTasks,
     speakers_expected: int | None = None,
+    language_code: str | None = None,
     db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Upload the complete audio file and start the transcription pipeline.
 
-    Streams the file to disk in 1 MB chunks (handles >100 MB sessions per
-    CLAUDE.md), then immediately returns 202 Accepted. The pipeline runs
+    Streams the file to disk in 1 MB chunks, then immediately returns 202 Accepted. The pipeline runs
     asynchronously in the background.
 
     The session must be in 'recording' status — re-uploading is not allowed
@@ -109,10 +109,10 @@ async def upload_audio(
     session = await db.get(Session, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    if session.status != "recording":
+    if session.status != SessionStatus.RECORDING:
         raise HTTPException(
             status_code=409,
-            detail=f"Session status is '{session.status}', expected 'recording'",
+            detail=f"Session status is '{session.status}', expected '{SessionStatus.RECORDING}'",
         )
 
     # Determine file extension from the original filename (default: .webm)
@@ -129,11 +129,11 @@ async def upload_audio(
     await db.execute(
         update(Session)
         .where(Session.id == session_id)
-        .values(status="processing", audio_path=audio_path)
+        .values(status=SessionStatus.PROCESSING, audio_path=audio_path)
     )
     await db.commit()
 
-    background_tasks.add_task(run_pipeline, str(session_id), audio_path, speakers_expected)
+    background_tasks.add_task(run_pipeline, str(session_id), audio_path, speakers_expected, language_code)
 
     return {
         "detail": "Audio received, transcription pipeline started",
@@ -144,7 +144,12 @@ async def upload_audio(
 # ── Background pipeline runner ────────────────────────────────────────────────
 
 
-async def run_pipeline(session_id: str, audio_path: str, speakers_expected: int | None = None) -> None:
+async def run_pipeline(
+    session_id: str,
+    audio_path: str,
+    speakers_expected: int | None = None,
+    language_code: str | None = None,
+) -> None:
     """Background task: run AssemblyAI transcription and persist utterances.
 
     Executes transcribe_node() via asyncio.to_thread() because the AssemblyAI
@@ -169,6 +174,7 @@ async def run_pipeline(session_id: str, audio_path: str, speakers_expected: int 
                 "session_id": session_id,
                 "audio_path": audio_path,
                 "speakers_expected": speakers_expected,
+                "language_code": language_code,
                 "utterances": [],
                 "current_index": 0,
                 "context_summary": "",
@@ -195,7 +201,7 @@ async def run_pipeline(session_id: str, audio_path: str, speakers_expected: int 
             await db.execute(
                 update(Session)
                 .where(Session.id == uuid.UUID(session_id))
-                .values(status="done")
+                .values(status=SessionStatus.DONE)
             )
             await db.commit()
 
@@ -225,7 +231,7 @@ async def _mark_session_error(db: AsyncSession, session_id: str) -> None:
         await db.execute(
             update(Session)
             .where(Session.id == uuid.UUID(session_id))
-            .values(status="error")
+                .values(status=SessionStatus.ERROR)
         )
         await db.commit()
     except Exception:

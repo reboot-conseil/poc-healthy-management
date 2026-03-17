@@ -3,7 +3,16 @@
 #
 # Usage:
 #   ./test_upload.sh /path/to/audio.mp3
-#   ./test_upload.sh                        # uses kick-off.mp3 next to this script
+#   ./test_upload.sh audio.mp3 5           # 5 participants expected
+#   ./test_upload.sh audio.mp3 5 fr        # 5 participants, French audio
+#   ./test_upload.sh audio.mp3 "" fr       # auto-count participants, French audio
+#
+# Arguments:
+#   $1  Path to audio file (default: kick-off.mp3 next to this script)
+#   $2  speakers_expected — known participant count (optional, improves diarisation)
+#   $3  language_code — BCP-47 code e.g. "fr", "en" (optional; when set, disables
+#       language_detection and gives the full inference budget to diarisation,
+#       reducing sub-second ghost-label fragments for known languages)
 #
 # Output files (written to results/ next to this script):
 #   results/<basename>_<session_id>.txt   — full transcript (one line per utterance)
@@ -14,6 +23,7 @@ set -euo pipefail
 API="http://localhost:8000"
 AUDIO_FILE="${1:-"$(dirname "$0")/../kick-off.mp3"}"
 SPEAKERS="${2:-}"          # optional: number of participants (improves diarisation)
+LANGUAGE="${3:-}"          # optional: BCP-47 language code e.g. "fr", "en"
 POLL_INTERVAL=10
 RESULTS_DIR="$(dirname "$0")/results"
 
@@ -30,6 +40,8 @@ mkdir -p "$RESULTS_DIR"
 
 echo "🎙  Audio file : $AUDIO_FILE"
 echo "🌐  API        : $API"
+[[ -n "$SPEAKERS" ]]  && echo "👥  Speakers   : $SPEAKERS"
+[[ -n "$LANGUAGE" ]]  && echo "🌍  Language   : $LANGUAGE"
 echo ""
 
 # ── Step 1: Create session ────────────────────────────────────────────────────
@@ -48,7 +60,13 @@ echo ""
 # ── Step 2: Upload audio ──────────────────────────────────────────────────────
 echo "▶  Uploading $TITLE..."
 UPLOAD_URL="$API/sessions/$SESSION_ID/audio"
-[[ -n "$SPEAKERS" ]] && UPLOAD_URL="${UPLOAD_URL}?speakers_expected=${SPEAKERS}"
+# Build query string — first param uses "?", subsequent ones use "&"
+SEP="?"
+if [[ -n "$SPEAKERS" ]]; then
+  UPLOAD_URL="${UPLOAD_URL}${SEP}speakers_expected=${SPEAKERS}"
+  SEP="&"
+fi
+[[ -n "$LANGUAGE" ]] && UPLOAD_URL="${UPLOAD_URL}${SEP}language_code=${LANGUAGE}"
 curl -sf -X POST "$UPLOAD_URL" -F "file=@$AUDIO_FILE" > /dev/null
 echo "✔  Upload accepted — pipeline started in background"
 echo ""

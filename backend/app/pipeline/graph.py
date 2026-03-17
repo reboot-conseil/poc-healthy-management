@@ -23,6 +23,9 @@ class PipelineState(TypedDict):
     audio_path: str
     # Optional: known participant count — improves diarisation accuracy
     speakers_expected: int | None
+    # Optional: BCP-47 language code (e.g. "fr", "en"). When set, disables
+    # language_detection and gives the full inference budget to diarisation.
+    language_code: str | None
     # Populated by transcribe_node; read by analyze_node
     utterances: list[dict]
     # Incremented by update_context_node; used by analyze_node to iterate
@@ -58,5 +61,6 @@ def transcribe_node(state: PipelineState) -> PipelineState:
     utterances = transcribe_audio(
         state["audio_path"],
         speakers_expected=state.get("speakers_expected"),
+        language_code=state.get("language_code"),
     )
     return {**state, "utterances": utterances, "current_index": 0}

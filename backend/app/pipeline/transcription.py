@@ -3,7 +3,17 @@
 Design constraints (from AGENTS.md):
 - Always send the **complete** audio file — never chunk it for AssemblyAI.
 - speaker_labels=True is mandatory for diarisation.
-- language_detection=True is safer than hardcoding "fr" for mixed-language sessions.
+- language_detection=True is ALWAYS enabled (required for speech_models routing).
+  When the session language is known, pass language_code to restrict detection
+  via language_detection_options.expected_languages — this constrains the model
+  to the specified language without disabling language_detection, which preserves
+  the full model-routing benefit of speech_models.
+  NOTE: language_code (the raw API field) and language_detection are mutually
+  exclusive. We therefore never pass language_code directly; instead we use
+  language_detection_options when a language hint is available.
+- For speaker count, speakers_expected is used as a strict constraint. Only pass
+  it when certain of the exact count — a correct strict count suppresses ghost
+  labels far better than a loose range. If the count is unknown, omit it entirely.
 - This module is intentionally synchronous. Callers in an async context must wrap
   transcribe_audio() with asyncio.to_thread() to avoid blocking the event loop.
 """
@@ -63,7 +73,11 @@ def _normalize_speaker(raw: str) -> str:
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
-def transcribe_audio(audio_path: str, speakers_expected: int | None = None) -> list[dict]:
+def transcribe_audio(
+    audio_path: str,
+    speakers_expected: int | None = None,
+    language_code: str | None = None,
+) -> list[dict]:
     """Transcribe a full audio file with AssemblyAI and return diarised utterances.
 
     Sends the complete file to AssemblyAI — never chunked — to preserve
@@ -74,10 +88,17 @@ def transcribe_audio(audio_path: str, speakers_expected: int | None = None) -> l
 
     Args:
         audio_path: Path to the audio file (WebM/Opus, MP3, WAV, etc.).
-        speakers_expected: Known number of participants. When provided, constrains
-            the diarisation model and significantly reduces split-speaker errors
-            (e.g. the same person assigned two different labels). Leave None to
-            let AssemblyAI auto-detect (less accurate on short utterances).
+        speakers_expected: Exact number of participants when known. Passed directly
+            as `speakers_expected` to constrain the diarisation model tightly to
+            that count — the safest option when you are certain of the number, as it
+            prevents the model from creating extra ghost labels. Leave None for
+            automatic detection (default range: 1–10 speakers).
+        language_code: BCP-47 language code (e.g. "fr", "en", "es"). When set,
+            constrains language_detection via language_detection_options.expected_languages
+            so the detection is restricted to that language. This preserves
+            language_detection=True (required for speech_models routing) while
+            removing language ambiguity that could degrade short-segment diarisation.
+            When None, detection runs unconstrained across all supported languages.
 
     Returns:
         List of utterance dicts ordered by start time:
@@ -100,9 +121,26 @@ def transcribe_audio(audio_path: str, speakers_expected: int | None = None) -> l
             f"Audio too short: {duration:.2f}s (minimum 2.0s required)"
         )
 
-    logger.info("Starting AssemblyAI transcription for: %s", audio_path)
+    lang_mode = f"expected_languages=[{language_code}]" if language_code else "unconstrained"
+    spk_mode = str(speakers_expected) if speakers_expected is not None else "auto"
+    logger.info(
+        "Starting AssemblyAI transcription: lang=%s, speakers=%s, file=%s",
+        lang_mode, spk_mode, audio_path,
+    )
 
     aai.settings.api_key = settings.ASSEMBLYAI_API_KEY
+
+    # language_detection=True is ALWAYS on — required for speech_models routing.
+    # When a language hint is given, we restrict detection to that language via
+    # language_detection_options.expected_languages rather than passing language_code
+    # directly (language_code and language_detection are mutually exclusive in the
+    # raw API; using language_detection_options keeps model routing intact).
+    lang_detection_opts = None
+    if language_code:
+        lang_detection_opts = aai.LanguageDetectionOptions(
+            expected_languages=[language_code],
+            fallback_language=language_code,
+        )
 
     config = aai.TranscriptionConfig(
         # Priority-ordered model list: U3 Pro for FR/EN/ES/PT/DE/IT (highest
@@ -110,8 +148,11 @@ def transcribe_audio(audio_path: str, speakers_expected: int | None = None) -> l
         speech_models=settings.assemblyai_speech_models_list,
         speaker_labels=True,
         language_detection=True,
-        # Constraining the expected speaker count reduces split-label errors.
-        # Only set when the value is known — passing a wrong count makes it worse.
+        language_detection_options=lang_detection_opts,
+        # Strict speaker count: when the caller knows the exact number of
+        # participants, constraining the model to that count suppresses ghost
+        # labels. The caller should only set this when confident — a wrong count
+        # forces the model to split or merge real speakers.
         speakers_expected=speakers_expected,
     )
 
