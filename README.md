@@ -84,11 +84,12 @@ Système de captation audio, transcription, diarisation et analyse des échanges
 
 ## Prérequis
 
-- Node.js 18+
 - Python 3.11+
-- PostgreSQL 15+
+- [Docker](https://www.docker.com/) + Docker Compose (pour PostgreSQL en local)
 - Un compte [Assembly AI](https://www.assemblyai.com/)
-- Un compte [OpenAI](https://platform.openai.com/) ou [Anthropic](https://www.anthropic.com/) (selon le LLM retenu)
+- Un compte [OpenAI](https://platform.openai.com/) ou [Anthropic](https://www.anthropic.com/) (pour la phase LangGraph — étape 2)
+
+> Node.js 18+ requis uniquement pour le frontend (non encore implémenté dans ce POC).
 
 ---
 
@@ -97,55 +98,61 @@ Système de captation audio, transcription, diarisation et analyse des échanges
 ### Cloner le repo
 
 ```bash
-git clone https://github.com/your-org/workathon-poc.git
-cd workathon-poc
-```
-
-### Frontend
-
-```bash
-cd frontend
-npm install
+git clone git@github.com:reboot-conseil/poc-healthy-management-.git
+cd poc-healthy-management
 ```
 
 ### Backend
 
 ```bash
 cd backend
-python -m venv .venv
-source .venv/bin/activate  # Windows : .venv\Scripts\activate
+python -m venv venv
+source venv/bin/activate  # Windows : venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### Base de données
+### Base de données (Docker)
+
+PostgreSQL tourne dans un conteneur Docker — aucune installation système requise.
 
 ```bash
-cd backend
-alembic upgrade head
+# Depuis la racine du projet
+docker compose up -d db
 ```
+
+Le conteneur expose PostgreSQL sur `localhost:5432` avec les identifiants du `.env`. Les tables sont créées automatiquement au premier démarrage du backend.
 
 ---
 
 ## Configuration
 
-### Backend — `.env`
+Copier `.env.example` en `.env` dans `backend/` et renseigner les valeurs :
 
-```env
-# API de transcription
-ASSEMBLYAI_API_KEY=your_assemblyai_key
-
-# LLM (choisir l'un ou l'autre)
-OPENAI_API_KEY=your_openai_key
-# ANTHROPIC_API_KEY=your_anthropic_key
-
-# Base de données
-DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/workathon
-
-# CORS
-ALLOWED_ORIGINS=http://localhost:5173
+```bash
+cp backend/.env.example backend/.env
 ```
 
-### Frontend — `.env.local`
+### Variables backend — `backend/.env`
+
+```env
+# AssemblyAI — https://www.assemblyai.com/dashboard
+ASSEMBLYAI_API_KEY=your_assemblyai_api_key_here
+
+# Modèles STT par ordre de priorité (Universal-3 Pro pour FR/EN/ES/PT/DE/IT,
+# Universal-2 en fallback pour les 99 autres langues)
+ASSEMBLYAI_SPEECH_MODELS=universal-3-pro,universal-2
+
+# PostgreSQL async (asyncpg driver)
+DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/workathon
+
+# CORS — origines autorisées (séparées par virgule)
+ALLOWED_ORIGINS=http://localhost:5173
+
+# Dossier de stockage des fichiers audio uploadés
+UPLOAD_DIR=uploads
+```
+
+### Frontend — `.env.local` (non implémenté)
 
 ```env
 VITE_API_URL=http://localhost:8000
@@ -155,70 +162,66 @@ VITE_API_URL=http://localhost:8000
 
 ## Lancement en développement
 
-### Backend
-
 ```bash
+# 1. Démarrer PostgreSQL
+docker compose up -d db
+
+# 2. Démarrer le backend
 cd backend
-source .venv/bin/activate
+source venv/bin/activate
 uvicorn app.main:app --reload --port 8000
 ```
 
-L'API est disponible sur `http://localhost:8000`.
-La documentation OpenAPI est accessible sur `http://localhost:8000/docs`.
-
-### Frontend
-
-```bash
-cd frontend
-npm run dev
-```
-
-L'application est disponible sur `http://localhost:5173`.
+- API : `http://localhost:8000`
+- Documentation OpenAPI interactive : `http://localhost:8000/docs`
 
 ---
 
 ## Tests
 
-### Backend
+### Tests unitaires backend
 
 ```bash
 cd backend
 pytest tests/ -v
 ```
 
-### Frontend
+Les tests couvrent `transcription.py` : chemin nominal, statut d'erreur, utterances vides, garde durée < 2s, normalisation des labels locuteurs, conversion millisecondes → secondes. Tous les appels AssemblyAI et filesystem sont mockés.
+
+### Test d'intégration avec un vrai fichier audio
+
+Un script de test est fourni à la racine du projet :
 
 ```bash
-cd frontend
-npm run test
+# Depuis la racine — utilise kick-off.mp3 automatiquement s'il est présent
+./test_upload.sh
+
+# Passer un fichier explicitement
+./test_upload.sh /chemin/vers/audio.mp3
+
+# Avec le nombre de participants connu (améliore la diarisation)
+./test_upload.sh /chemin/vers/audio.mp3 5
 ```
+
+Le script :
+1. Crée une session via `POST /sessions`
+2. Upload le fichier via `POST /sessions/{id}/audio`
+3. Poll le statut toutes les 10 secondes jusqu'à `done` ou `error`
+4. Écrit deux fichiers dans `results/` :
+   - `results/<nom>_<session_id>.txt` — transcription lisible ligne par ligne
+   - `results/<nom>_<session_id>.json` — tableau JSON complet (entrée pour la phase LangGraph)
 
 ### Lint & typage
 
 ```bash
-# Backend
+cd backend
 ruff check .
 mypy app/
-
-# Frontend
-npm run lint
-npm run typecheck
 ```
 
 ---
 
 ## Déploiement
-
-### Frontend → Vercel
-
-Le déploiement est automatique via GitHub Actions :
-- Push sur `main` → déploiement en production
-- Push sur `dev` ou PR vers `main` → déploiement en preview
-
-Configurer les variables d'environnement dans le dashboard Vercel :
-```
-VITE_API_URL=https://your-backend.railway.app
-```
 
 ### Backend → Railway
 
@@ -227,9 +230,22 @@ Le déploiement est automatique via GitHub Actions sur push vers `main`.
 Configurer les variables d'environnement dans le dashboard Railway :
 ```
 ASSEMBLYAI_API_KEY=...
+ASSEMBLYAI_SPEECH_MODELS=universal-3-pro,universal-2
 OPENAI_API_KEY=...
-DATABASE_URL=...
+DATABASE_URL=postgresql+asyncpg://...
 ALLOWED_ORIGINS=https://your-app.vercel.app
+UPLOAD_DIR=uploads
+```
+
+### Frontend → Vercel (non implémenté)
+
+Le déploiement sera automatique via GitHub Actions :
+- Push sur `main` → déploiement en production
+- Push sur `dev` ou PR vers `main` → déploiement en preview
+
+Variables d'environnement à configurer dans le dashboard Vercel :
+```
+VITE_API_URL=https://your-backend.railway.app
 ```
 
 ---
@@ -238,43 +254,49 @@ ALLOWED_ORIGINS=https://your-app.vercel.app
 
 ```
 /
-├── frontend/
-│   ├── src/
-│   │   ├── components/
-│   │   │   ├── Recorder.tsx         # Interface d'enregistrement
-│   │   │   ├── SessionView.tsx      # Vue session en cours
-│   │   │   └── ReportView.tsx       # Affichage rapport final
-│   │   ├── hooks/
-│   │   │   └── useAudioRecorder.ts  # Web Audio API + détection silence
-│   │   └── api/
-│   │       └── client.ts            # Client HTTP vers backend
-│   ├── package.json
-│   └── tsconfig.json
+├── docker-compose.yml               # PostgreSQL en développement local
+├── test_upload.sh                   # Script de test end-to-end (upload + poll + export)
+├── results/                         # Transcriptions exportées (.txt et .json)
 │
-├── backend/
+├── backend/                         # ✅ Implémenté
+│   ├── .env.example                 # Template de configuration
+│   ├── requirements.txt
+│   ├── pytest.ini
 │   ├── app/
-│   │   ├── main.py                  # FastAPI app + routes
+│   │   ├── main.py                  # FastAPI app, lifespan, CORS
+│   │   ├── config.py                # Settings (pydantic-settings, .env)
 │   │   ├── api/
-│   │   │   ├── sessions.py          # Endpoints sessions
-│   │   │   └── reports.py           # Endpoints rapports
+│   │   │   └── sessions.py          # POST /sessions, POST /{id}/audio, GET /{id}
 │   │   ├── pipeline/
-│   │   │   ├── transcription.py     # Intégration Assembly AI
-│   │   │   ├── graph.py             # LangGraph StateGraph
-│   │   │   └── prompts.py           # Templates prompts LLM
-│   │   ├── models/                  # SQLAlchemy models
+│   │   │   ├── transcription.py     # Assembly AI — STT + diarisation (étape 1)
+│   │   │   └── graph.py             # PipelineState + transcribe_node (LangGraph)
+│   │   ├── models/
+│   │   │   ├── session.py           # SQLAlchemy model sessions
+│   │   │   └── utterance.py         # SQLAlchemy model utterances
 │   │   └── db/
-│   │       └── database.py          # Connexion PostgreSQL (async)
-│   ├── tests/
-│   ├── alembic/                     # Migrations DB
-│   └── requirements.txt
+│   │       └── database.py          # Engine async + AsyncSessionLocal
+│   └── tests/
+│       ├── conftest.py
+│       └── test_transcription.py    # Tests unitaires transcription.py
+│
+├── frontend/                        # 🔜 Non implémenté
+│   └── src/
+│       ├── components/
+│       │   ├── Recorder.tsx
+│       │   ├── SessionView.tsx
+│       │   └── ReportView.tsx
+│       ├── hooks/
+│       │   └── useAudioRecorder.ts
+│       └── api/
+│           └── client.ts
 │
 ├── .github/
-│   └── workflows/
+│   └── workflows/                   # 🔜 Non implémenté
 │       ├── frontend.yml
 │       └── backend.yml
 │
-├── CLAUDE.md                        # Contexte projet pour Claude Code
-├── AGENTS.md                        # Directives pour agents IA
+├── CLAUDE.md
+├── AGENTS.md
 └── README.md
 ```
 
@@ -282,9 +304,18 @@ ALLOWED_ORIGINS=https://your-app.vercel.app
 
 ## Pipeline de traitement
 
-### Étape 1 — Transcription globale (Assembly AI)
+### Étape 1 — Transcription globale (Assembly AI) ✅
 
-Le fichier audio complet de la séance est envoyé à Assembly AI en une seule requête avec `speaker_labels=True`. Assembly AI retourne une transcription diarisée horodatée :
+Le fichier audio complet est envoyé à Assembly AI via `transcription.py` avec la configuration suivante :
+
+| Paramètre | Valeur | Raison |
+|---|---|---|
+| `speech_models` | `["universal-3-pro", "universal-2"]` | U3 Pro pour FR/EN/ES/PT/DE/IT, fallback Universal-2 pour les autres langues |
+| `speaker_labels` | `True` | Diarisation obligatoire |
+| `language_detection` | `True` | Plus robuste que `language_code="fr"` pour les séances mixtes |
+| `speakers_expected` | optionnel | Contraint le modèle au nombre exact de participants — réduit les erreurs d'attribution |
+
+Résultat retourné par `transcribe_audio()` :
 
 ```json
 [
@@ -294,21 +325,31 @@ Le fichier audio complet de la séance est envoyé à Assembly AI en une seule r
 ]
 ```
 
-> L'envoi du fichier **complet** (et non chunk par chunk) est intentionnel : la diarisation est un problème global — le modèle a besoin d'entendre toutes les occurrences d'un locuteur pour construire son empreinte vocale avec précision.
+Les timestamps AssemblyAI (en millisecondes) sont convertis en secondes. Les labels `SPEAKER_A` sont normalisés en `A`.
 
-### Étape 2 — Analyse LLM séquentielle (LangGraph)
+> L'envoi du fichier **complet** (et non chunk par chunk) est intentionnel : la diarisation est un problème global — le modèle construit l'empreinte vocale de chaque locuteur sur l'ensemble de la séance. Fragmenter le fichier dégrade significativement la précision.
+
+Le `transcribe_node` LangGraph encapsule cet appel et met à jour le `PipelineState` immuable :
+
+```python
+def transcribe_node(state: PipelineState) -> PipelineState:
+    utterances = transcribe_audio(state["audio_path"], state.get("speakers_expected"))
+    return {**state, "utterances": utterances, "current_index": 0}
+```
+
+### Étape 2 — Analyse LLM séquentielle (LangGraph) 🔜
 
 Chaque prise de parole est analysée séquentiellement. Le LLM reçoit pour chaque étape N :
 - Le texte de la prise de parole N
 - Un résumé cumulé des étapes 1 à N-1 (résumé glissant au-delà de 20 prises de parole)
 
-Le `StateGraph` LangGraph orchestre les nœuds suivants :
+Le `StateGraph` LangGraph orchestrera les nœuds suivants :
 
 ```
 transcribe_node → analyze_node → update_context_node → [loop] → report_node
 ```
 
-### Rapport final
+### Rapport final 🔜
 
 Le rapport agrège les deux couches :
 - **Transcription structurée** : qui a dit quoi et quand
@@ -337,10 +378,16 @@ reports (id, session_id, content JSONB, created_at)
 ## Points de vigilance
 
 **Durée de traitement**
-Le pipeline Assembly AI + LangGraph peut prendre 1 à 3 minutes pour une séance d'une heure. L'endpoint de traitement retourne immédiatement un `202 Accepted` et traite en tâche de fond. Le frontend poll `GET /reports/{session_id}` jusqu'à ce que le statut passe à `done`.
+Le pipeline Assembly AI + LangGraph peut prendre 1 à 3 minutes pour une séance d'une heure. L'endpoint `POST /sessions/{id}/audio` retourne immédiatement un `202 Accepted` et lance le pipeline en `BackgroundTask`. Le client poll `GET /sessions/{id}` (retourne `202` tant que `status == "processing"`, `200` quand `done` ou `error`).
 
 **Taille des fichiers audio**
-Pour des séances supérieures à une heure, le fichier audio peut dépasser 100 Mo. Le frontend utilise IndexedDB pour l'accumulation des chunks au-delà de 30 minutes.
+Pour des séances supérieures à une heure, le fichier audio peut dépasser 100 Mo. L'upload est streamé en chunks de 1 Mo via `aiofiles` pour éviter la saturation mémoire. Le frontend devra utiliser IndexedDB pour l'accumulation des chunks au-delà de 30 minutes.
+
+**Précision de la diarisation**
+La diarisation peut confondre le même locuteur sous deux labels différents sur des prises de parole très courtes (< 2s) ou avec une intonation atypique (questions, fins de phrase). Passer `speakers_expected` au nombre exact de participants améliore significativement la précision en contraignant le modèle. Exemple : `POST /sessions/{id}/audio?speakers_expected=5`.
+
+**Sélection du modèle Assembly AI**
+La variable `ASSEMBLYAI_SPEECH_MODELS` contrôle la priorité des modèles. Pour des séances exclusivement en français, `universal-3-pro` seul suffit et réduit la latence. Le champ `speech_model_used` est loggué après chaque transcription pour audit.
 
 **Fenêtre de contexte LLM**
 Au-delà de 20 prises de parole, le backend applique un résumé glissant : les N-10 premières étapes sont condensées, les 10 dernières restent intactes dans le prompt.
