@@ -26,16 +26,20 @@ class Settings(BaseSettings):
 
     @property
     def assemblyai_speech_models_list(self) -> list[str]:
-        return [m.strip() for m in self.ASSEMBLYAI_SPEECH_MODELS.split(",") if m.strip()]
+        return [
+            m.strip() for m in self.ASSEMBLYAI_SPEECH_MODELS.split(",") if m.strip()
+        ]
 
     # PostgreSQL — async DSN (asyncpg driver)
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/workathon"
+    DATABASE_URL: str = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/workathon"
+    )
 
     # LLM — Vertex AI via ChatGoogleGenerativeAI (langchain-google-genai v4+)
     # Authentication uses Application Default Credentials (ADC).
     # Local dev:  gcloud auth application-default login
     # Production: set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON path
-    GOOGLE_CLOUD_PROJECT: str = ""              # GCP project ID — triggers Vertex AI backend
+    GOOGLE_CLOUD_PROJECT: str = ""  # GCP project ID — triggers Vertex AI backend
     GOOGLE_CLOUD_LOCATION: str = "us-central1"  # Vertex AI region
     GEMINI_MODEL: str = "gemini-2.5-flash"
 

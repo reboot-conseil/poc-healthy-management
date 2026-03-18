@@ -14,11 +14,20 @@ transcription + LangGraph LLM analysis loop + report generation) takes
 import asyncio
 import logging
 import uuid
+from datetime import datetime
 from pathlib import Path
 
 import aiofiles
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Response,
+    UploadFile,
+)
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,11 +55,21 @@ class SessionResponse(BaseModel):
     status: str
     title: str | None = None
     audio_path: str | None = None
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.get("", response_model=list[SessionResponse])
+async def list_sessions(
+    db: AsyncSession = Depends(get_db),
+) -> list[Session]:
+    """Return all sessions ordered by creation date (most recent first)."""
+    result = await db.execute(select(Session).order_by(Session.created_at.desc()))
+    return list(result.scalars().all())
 
 
 @router.post("", status_code=201, response_model=SessionResponse)
@@ -135,7 +154,9 @@ async def upload_audio(
     )
     await db.commit()
 
-    background_tasks.add_task(run_pipeline, str(session_id), audio_path, speakers_expected, language_code)
+    background_tasks.add_task(
+        run_pipeline, str(session_id), audio_path, speakers_expected, language_code
+    )
 
     return {
         "detail": "Audio received, transcription pipeline started",
@@ -225,15 +246,11 @@ async def run_pipeline(
             )
 
         except TranscriptionError as exc:
-            logger.error(
-                "Transcription error for session %s: %s", session_id, exc
-            )
+            logger.error("Transcription error for session %s: %s", session_id, exc)
             await _mark_session_error(db, session_id)
 
         except Exception:
-            logger.exception(
-                "Unexpected pipeline failure for session %s", session_id
-            )
+            logger.exception("Unexpected pipeline failure for session %s", session_id)
             await _mark_session_error(db, session_id)
 
 

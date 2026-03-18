@@ -39,3 +39,16 @@ export interface Report {
   content: ReportContent;
   created_at: string;
 }
+
+export interface ScriptStep {
+  title: string;
+  description: string;
+  duration: number; // minutes
+}
+
+export interface Script {
+  id: string;
+  title: string;
+  steps: ScriptStep[];
+  created_at: string;
+}
