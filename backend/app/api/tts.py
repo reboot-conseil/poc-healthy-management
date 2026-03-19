@@ -26,7 +26,6 @@ import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
-from google.oauth2 import service_account
 
 from app.config import settings
 
@@ -52,16 +51,11 @@ _LIVE_INSTRUCTION = (
 
 
 def _get_client() -> genai.Client:
-    info = json.loads(settings.GOOGLE_APPLICATION_CREDENTIALS_JSON)
-    credentials = service_account.Credentials.from_service_account_info(
-        info,
-        scopes=["https://www.googleapis.com/auth/cloud-platform"],
-    )
+    """Build a Vertex AI genai client using Application Default Credentials."""
     return genai.Client(
         vertexai=True,
         project=settings.GOOGLE_CLOUD_PROJECT,
         location=settings.GOOGLE_CLOUD_LOCATION,
-        credentials=credentials,
     )
 
 
