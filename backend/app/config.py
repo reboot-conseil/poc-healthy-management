@@ -38,10 +38,17 @@ class Settings(BaseSettings):
     # LLM — Vertex AI via ChatGoogleGenerativeAI (langchain-google-genai v4+)
     # Authentication uses Application Default Credentials (ADC).
     # Local dev:  gcloud auth application-default login
-    # Production: set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON path
+    # Production: set GOOGLE_APPLICATION_CREDENTIALS_JSON to the full contents of
+    #             a GCP service account JSON key (with roles/aiplatform.user).
+    #             main.py lifespan writes it to /tmp and sets GOOGLE_APPLICATION_CREDENTIALS.
     GOOGLE_CLOUD_PROJECT: str = ""  # GCP project ID — triggers Vertex AI backend
     GOOGLE_CLOUD_LOCATION: str = "us-central1"  # Vertex AI region
     GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Full JSON content of a GCP service account key file.
+    # Leave empty locally (ADC via gcloud is used instead).
+    # On Railway: paste the entire service account JSON as this env var value.
+    GOOGLE_APPLICATION_CREDENTIALS_JSON: str = ""
 
     # Number of utterances sent to the LLM in a single analysis call.
     # Lower values = more context precision; higher values = fewer API calls (faster).

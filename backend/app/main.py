@@ -6,6 +6,8 @@ Usage:
 
 import logging
 import logging.config
+import os
+import tempfile
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -43,6 +45,9 @@ logging.config.dictConfig(
 logger = logging.getLogger(__name__)
 
 
+_gcp_credentials_tmp: tempfile.NamedTemporaryFile | None = None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Attempt to create DB tables on startup; log a warning on failure.
@@ -52,6 +57,23 @@ async def lifespan(app: FastAPI):
     starting — endpoints that don't touch the DB (e.g. health check) should
     remain reachable so deployment probes don't fail before the DB is ready.
     """
+    global _gcp_credentials_tmp
+
+    # When GOOGLE_APPLICATION_CREDENTIALS_JSON is set (Railway / any container
+    # environment), write the JSON key to a temp file and point the Google SDK
+    # at it via the standard GOOGLE_APPLICATION_CREDENTIALS env var.
+    # This runs before the LLM singleton is built, so graph.py needs no changes.
+    if settings.GOOGLE_APPLICATION_CREDENTIALS_JSON:
+        _gcp_credentials_tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False
+        )
+        _gcp_credentials_tmp.write(settings.GOOGLE_APPLICATION_CREDENTIALS_JSON)
+        _gcp_credentials_tmp.flush()
+        os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = _gcp_credentials_tmp.name
+        logger.info(
+            "GCP credentials written to %s", _gcp_credentials_tmp.name
+        )
+
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -64,6 +86,13 @@ async def lifespan(app: FastAPI):
         )
     yield
     await engine.dispose()
+
+    # Clean up the temp credentials file on shutdown.
+    if _gcp_credentials_tmp is not None:
+        try:
+            os.unlink(_gcp_credentials_tmp.name)
+        except OSError:
+            pass
 
 
 app = FastAPI(
