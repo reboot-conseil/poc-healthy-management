@@ -18,7 +18,7 @@ export function useWorkathonScript(
   active: boolean,
 ): WorkathonScriptState {
   const [stepIndex, setStepIndex] = useState(0);
-  const [secondsLeft, setSecondsLeft] = useState(steps[0]?.duration * 60 ?? 0);
+  const [secondsLeft, setSecondsLeft] = useState((steps[0]?.duration ?? 0) * 60);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   // Refs so interval callbacks always see the latest values without re-creating the interval
@@ -79,7 +79,7 @@ export function useWorkathonScript(
       stopTimer();
       stopSpeaking();
       setStepIndex(0);
-      setSecondsLeft(steps[0]?.duration * 60 ?? 0);
+      setSecondsLeft((steps[0]?.duration ?? 0) * 60);
       setIsSpeaking(false);
     }
 
