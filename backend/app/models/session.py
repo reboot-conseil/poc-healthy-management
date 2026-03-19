@@ -3,7 +3,7 @@ from datetime import datetime
 from enum import StrEnum
 
 from sqlalchemy import DateTime, String, Text, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.database import Base
@@ -45,3 +45,5 @@ class Session(Base):
     )
     # Filesystem path to the saved audio file (set after upload)
     audio_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Human-readable names for speaker labels, e.g. {"A": "Alice", "B": "Bob"}
+    speaker_names: Mapped[dict | None] = mapped_column(JSONB, nullable=True)

@@ -6,8 +6,10 @@ export interface Session {
   status: SessionStatus;
   created_at: string;
   audio_path: string | null;
+  speaker_names: Record<string, string> | null;
 }
 
+// Utterance row from the DB (used standalone if needed)
 export interface Utterance {
   id: string;
   session_id: string;
@@ -17,27 +19,32 @@ export interface Utterance {
   text: string;
   intention: string | null;
   sentiment: string | null;
-  issues: Record<string, string> | null;
+  issues: string[];
   created_at: string;
 }
 
-export interface ImprovementAxis {
-  title: string;
-  description: string;
-  priority: 'high' | 'medium' | 'low';
+// Utterance as embedded in the report content JSONB
+export interface ReportUtterance {
+  speaker: string;
+  start: number;
+  end: number;
+  text: string;
+  intention: string | null;
+  sentiment: string | null;
+  issues: string[];
 }
 
 export interface ReportContent {
-  utterances: Utterance[];
-  improvement_axes: ImprovementAxis[];
-  summary: string | null;
+  utterances: ReportUtterance[];
+  improvement_axes: string[];
+  synthesis: string | null;
 }
 
 export interface Report {
-  id: string;
+  report_id: string;
   session_id: string;
   content: ReportContent;
-  created_at: string;
+  speaker_names: Record<string, string> | null;
 }
 
 export interface ScriptStep {

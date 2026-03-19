@@ -69,6 +69,12 @@ export const api = {
   getReport: (sessionId: string): Promise<Report> =>
     request<Report>(`/reports/${sessionId}`),
 
+  updateSpeakerNames: (sessionId: string, names: Record<string, string>): Promise<void> =>
+    request<void>(`/sessions/${sessionId}/speaker-names`, {
+      method: 'PATCH',
+      body: JSON.stringify({ speaker_names: names }),
+    }),
+
   listScripts: (): Promise<Script[]> =>
     request<Script[]>('/api/scripts'),
 

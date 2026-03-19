@@ -56,8 +56,13 @@ class SessionResponse(BaseModel):
     title: str | None = None
     audio_path: str | None = None
     created_at: datetime
+    speaker_names: dict | None = None
 
     model_config = {"from_attributes": True}
+
+
+class SpeakerNamesBody(BaseModel):
+    speaker_names: dict[str, str]
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -107,6 +112,30 @@ async def get_session(
     if session.status == SessionStatus.PROCESSING:
         response.status_code = 202
 
+    return session
+
+
+@router.patch("/{session_id}/speaker-names", response_model=SessionResponse)
+async def update_speaker_names(
+    session_id: uuid.UUID,
+    body: SpeakerNamesBody,
+    db: AsyncSession = Depends(get_db),
+) -> Session:
+    """Persist human-readable names for speaker labels (e.g. {"A": "Alice"}).
+
+    Replaces the entire speaker_names map for the session.
+    """
+    session = await db.get(Session, session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    await db.execute(
+        sa_update(Session)
+        .where(Session.id == session_id)
+        .values(speaker_names=body.speaker_names)
+    )
+    await db.commit()
+    await db.refresh(session)
     return session
 
 

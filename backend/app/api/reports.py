@@ -48,6 +48,7 @@ class ReportResponse(BaseModel):
     session_id: uuid.UUID
     report_id: uuid.UUID
     content: dict
+    speaker_names: dict | None = None
 
     model_config = {"from_attributes": True}
 
@@ -101,4 +102,5 @@ async def get_report(
         session_id=session_id,
         report_id=report.id,
         content=report.content,
+        speaker_names=session.speaker_names,
     )
