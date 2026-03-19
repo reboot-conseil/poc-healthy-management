@@ -4,6 +4,8 @@ Usage:
     uvicorn app.main:app --reload --port 8000
 """
 
+from __future__ import annotations
+
 import logging
 import logging.config
 import os
