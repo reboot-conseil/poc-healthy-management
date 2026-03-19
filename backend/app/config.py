@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,6 +35,11 @@ class Settings(BaseSettings):
     DATABASE_URL: str = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/workathon"
     )
+
+    @field_validator("DATABASE_URL", mode="before")
+    @classmethod
+    def strip_database_url(cls, v: str) -> str:
+        return v.strip()
 
     # LLM — Vertex AI via ChatGoogleGenerativeAI (langchain-google-genai v4+)
     # Authentication uses Application Default Credentials (ADC).
