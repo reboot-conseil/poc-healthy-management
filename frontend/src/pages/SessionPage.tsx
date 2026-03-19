@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, useParams, Link } from 'react-router-dom';
 import { Upload, ArrowLeft, AlertCircle, FileAudio, X, Loader2, Mic, Square, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
@@ -16,6 +16,7 @@ type SourceMode = 'file' | 'record';
 
 export function SessionPage() {
   const navigate = useNavigate();
+  const { id: sessionId } = useParams<{ id?: string }>();
 
   const [sessionTitle, setSessionTitle] = useState('');
   const [speakersExpected, setSpeakersExpected] = useState<number | undefined>(undefined);
@@ -70,6 +71,24 @@ export function SessionPage() {
     },
     [navigate],
   );
+
+  // When navigating to an existing session (e.g. a "processing" session from the list)
+  useEffect(() => {
+    if (!sessionId) return;
+    api.getSession(sessionId).then((session) => {
+      if (session.status === 'done') {
+        void navigate(`/report/${session.id}`, { replace: true });
+      } else if (session.status === 'processing') {
+        setUploadPhase('processing');
+        pollForCompletion(session.id);
+      } else if (session.status === 'error') {
+        setUploadPhase('error');
+        setPhaseError('Le traitement a échoué côté serveur.');
+      }
+      // 'recording' status: nothing special — leave as idle (edge case)
+    }).catch(() => undefined);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId]);
 
   const handleSubmit = useCallback(
     async (audioSource: Blob | File) => {
