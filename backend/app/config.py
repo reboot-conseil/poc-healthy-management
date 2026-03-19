@@ -31,6 +31,18 @@ class Settings(BaseSettings):
     # PostgreSQL — async DSN (asyncpg driver)
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/workathon"
 
+    # LLM — Vertex AI via ChatGoogleGenerativeAI (langchain-google-genai v4+)
+    # Authentication uses Application Default Credentials (ADC).
+    # Local dev:  gcloud auth application-default login
+    # Production: set GOOGLE_APPLICATION_CREDENTIALS to a service account JSON path
+    GOOGLE_CLOUD_PROJECT: str = ""              # GCP project ID — triggers Vertex AI backend
+    GOOGLE_CLOUD_LOCATION: str = "us-central1"  # Vertex AI region
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
+    # Number of utterances sent to the LLM in a single analysis call.
+    # Lower values = more context precision; higher values = fewer API calls (faster).
+    ANALYSIS_BATCH_SIZE: int = 10
+
     # CORS — comma-separated list of allowed origins
     ALLOWED_ORIGINS: str = "http://localhost:5173"
 

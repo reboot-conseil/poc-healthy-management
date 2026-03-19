@@ -17,6 +17,15 @@ alembic>=1.13.0
 # FastAPI large-file upload support
 python-multipart>=0.0.9
 
+# LangGraph analysis pipeline
+langgraph>=0.2.0
+langchain>=0.3.0
+langchain-core>=0.3.0
+# langchain-google-genai v4+ unifies Gemini Developer API + Vertex AI under
+# ChatGoogleGenerativeAI; passing project= auto-selects the Vertex AI backend.
+# This supersedes the deprecated langchain-google-vertexai / ChatVertexAI.
+langchain-google-genai>=4.0.0
+
 # Configuration
 python-dotenv>=1.0.0
 pydantic-settings>=2.0.0
