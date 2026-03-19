@@ -6,8 +6,9 @@ Endpoints:
     POST   /sessions/{id}/audio   Upload full audio file, start pipeline
 
 The audio upload endpoint returns 202 immediately and hands off to
-run_pipeline() as a FastAPI BackgroundTask — the pipeline (AssemblyAI +
-future LangGraph analysis) takes 1–3 minutes and must never block a worker.
+run_pipeline() as a FastAPI BackgroundTask — the full pipeline (AssemblyAI
+transcription + LangGraph LLM analysis loop + report generation) takes
+1–5 minutes and must never block a worker.
 """
 
 import asyncio
@@ -18,14 +19,15 @@ from pathlib import Path
 import aiofiles
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response, UploadFile
 from pydantic import BaseModel
-from sqlalchemy import update
+from sqlalchemy import update as sa_update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.database import AsyncSessionLocal, get_db
+from app.models.report import Report
 from app.models.session import Session, SessionStatus
 from app.models.utterance import Utterance
-from app.pipeline.graph import PipelineState, transcribe_node
+from app.pipeline.graph import PipelineState, pipeline_graph
 from app.pipeline.transcription import TranscriptionError
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -127,7 +129,7 @@ async def upload_audio(
             await dest.write(chunk)
 
     await db.execute(
-        update(Session)
+        sa_update(Session)
         .where(Session.id == session_id)
         .values(status=SessionStatus.PROCESSING, audio_path=audio_path)
     )
@@ -150,15 +152,15 @@ async def run_pipeline(
     speakers_expected: int | None = None,
     language_code: str | None = None,
 ) -> None:
-    """Background task: run AssemblyAI transcription and persist utterances.
+    """Background task: run the full LangGraph pipeline and persist all results.
 
-    Executes transcribe_node() via asyncio.to_thread() because the AssemblyAI
-    SDK is synchronous (it polls until the transcript is ready). Running it in
-    a thread pool keeps the event loop unblocked for other requests during the
-    1–3 minute processing window.
+    Executes pipeline_graph.invoke() via asyncio.to_thread() because both the
+    AssemblyAI SDK and the LangChain LLM calls are synchronous. Running in a
+    thread pool keeps the event loop unblocked during the 1–5 minute window.
 
     On success:
-        - Utterances bulk-inserted into the DB
+        - Utterance rows bulk-inserted (with intention / sentiment / issues)
+        - Report row inserted with the final structured JSON
         - session.status updated to 'done'
 
     On any failure:
@@ -176,14 +178,17 @@ async def run_pipeline(
                 "speakers_expected": speakers_expected,
                 "language_code": language_code,
                 "utterances": [],
-                "current_index": 0,
-                "context_summary": "",
                 "analyzed_utterances": [],
+                "report": None,
             }
 
-            # transcribe_node is synchronous — run in a thread pool
-            state = await asyncio.to_thread(transcribe_node, initial_state)
+            # The full graph (transcription + LLM analysis loop + report) is
+            # synchronous — run in a thread pool to avoid blocking the event loop.
+            final_state: PipelineState = await asyncio.to_thread(
+                pipeline_graph.invoke, initial_state
+            )
 
+            # Persist utterances enriched with LLM analysis
             utterance_rows = [
                 Utterance(
                     session_id=uuid.UUID(session_id),
@@ -191,24 +196,32 @@ async def run_pipeline(
                     start_time=u["start"],
                     end_time=u["end"],
                     text=u["text"],
-                    # intention / sentiment / issues remain NULL here;
-                    # they will be filled in by analyze_node (LangGraph phase 2)
+                    intention=u.get("intention"),
+                    sentiment=u.get("sentiment"),
+                    issues=u.get("issues") or [],
                 )
-                for u in state["utterances"]
+                for u in final_state["analyzed_utterances"]
             ]
             db.add_all(utterance_rows)
 
+            # Persist the final report
+            report_row = Report(
+                session_id=uuid.UUID(session_id),
+                content=final_state["report"],
+            )
+            db.add(report_row)
+
             await db.execute(
-                update(Session)
+                sa_update(Session)
                 .where(Session.id == uuid.UUID(session_id))
                 .values(status=SessionStatus.DONE)
             )
             await db.commit()
 
             logger.info(
-                "Pipeline complete for session %s: %d utterances persisted",
+                "Pipeline complete for session %s: %d utterances, report generated",
                 session_id,
-                len(state["utterances"]),
+                len(final_state["analyzed_utterances"]),
             )
 
         except TranscriptionError as exc:
@@ -229,9 +242,9 @@ async def _mark_session_error(db: AsyncSession, session_id: str) -> None:
     try:
         await db.rollback()
         await db.execute(
-            update(Session)
+            sa_update(Session)
             .where(Session.id == uuid.UUID(session_id))
-                .values(status=SessionStatus.ERROR)
+            .values(status=SessionStatus.ERROR)
         )
         await db.commit()
     except Exception:

@@ -5,18 +5,42 @@ Usage:
 """
 
 import logging
+import logging.config
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import sessions
+from app.api import reports, sessions
 from app.config import settings
 from app.db.database import engine
 
 # Import models so Base.metadata is populated before create_all
 import app.models  # noqa: F401
 from app.db.database import Base
+
+logging.config.dictConfig(
+    {
+        "version": 1,
+        "disable_existing_loggers": False,
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s  %(levelname)-8s  %(name)s — %(message)s",
+                "datefmt": "%H:%M:%S",
+            }
+        },
+        "handlers": {
+            "console": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+            }
+        },
+        "loggers": {
+            # Show INFO+ for all app code
+            "app": {"level": "INFO", "handlers": ["console"], "propagate": False},
+        },
+    }
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +84,4 @@ app.add_middleware(
 )
 
 app.include_router(sessions.router)
+app.include_router(reports.router)
