@@ -8,9 +8,15 @@ Returns:
     202 Accepted        when session status == 'processing' (still running)
     404                 when session does not exist
     409                 when session is done but report row is missing (data integrity issue)
+
+The report is assembled on-the-fly from the utterances already persisted by the
+transcription pipeline.  The LangGraph analysis phase (intention / sentiment /
+improvement_axes) is not yet implemented, so those fields are returned as null /
+empty for now.
 """
 
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel
@@ -20,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.database import get_db
 from app.models.report import Report
 from app.models.session import Session, SessionStatus
+from app.models.utterance import Utterance
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
@@ -66,7 +73,9 @@ async def get_report(
 
     if session.status == SessionStatus.PROCESSING:
         response.status_code = 202
-        raise HTTPException(status_code=202, detail="Pipeline still processing — try again later")
+        raise HTTPException(
+            status_code=202, detail="Pipeline still processing — try again later"
+        )
 
     if session.status == SessionStatus.ERROR:
         raise HTTPException(status_code=500, detail="Pipeline failed for this session")
@@ -78,9 +87,7 @@ async def get_report(
         )
 
     # Status is 'done' — fetch the report row
-    result = await db.execute(
-        select(Report).where(Report.session_id == session_id)
-    )
+    result = await db.execute(select(Report).where(Report.session_id == session_id))
     report = result.scalar_one_or_none()
 
     if report is None:

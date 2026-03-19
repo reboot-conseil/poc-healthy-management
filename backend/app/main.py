@@ -11,13 +11,11 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import reports, sessions
-from app.config import settings
-from app.db.database import engine
-
 # Import models so Base.metadata is populated before create_all
 import app.models  # noqa: F401
-from app.db.database import Base
+from app.api import reports, scripts, sessions, tts
+from app.config import settings
+from app.db.database import Base, engine
 
 logging.config.dictConfig(
     {
@@ -85,3 +83,5 @@ app.add_middleware(
 
 app.include_router(sessions.router)
 app.include_router(reports.router)
+app.include_router(scripts.router)
+app.include_router(tts.router)

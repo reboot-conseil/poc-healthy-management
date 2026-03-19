@@ -1,24 +1,53 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { Upload, ArrowLeft, AlertCircle, FileAudio, X, Loader2 } from 'lucide-react';
+import { Upload, ArrowLeft, AlertCircle, FileAudio, X, Loader2, Mic, Square, ChevronLeft, ChevronRight, Volume2 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
 import { api } from '../api/client';
+import { useAudioRecorder } from '../hooks/useAudioRecorder';
+import { useWorkathonScript } from '../hooks/useWorkathonScript';
+import { useGeminiLive } from '../hooks/useGeminiLive';
+import { DEFAULT_SCRIPT } from '../data/workathon-script';
 import { cn } from '../lib/utils';
+import type { Script } from '../types';
 
 type UploadPhase = 'idle' | 'uploading' | 'processing' | 'done' | 'error';
+type SourceMode = 'file' | 'record';
 
 export function SessionPage() {
   const navigate = useNavigate();
 
   const [sessionTitle, setSessionTitle] = useState('');
+  const [speakersExpected, setSpeakersExpected] = useState<number | undefined>(undefined);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadPhase, setUploadPhase] = useState<UploadPhase>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [phaseError, setPhaseError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [sourceMode, setSourceMode] = useState<SourceMode>('file');
+
+  const [savedScripts, setSavedScripts] = useState<Script[]>([]);
+  const [selectedScript, setSelectedScript] = useState<Script | null>(null);
+
+  useEffect(() => {
+    api.listScripts()
+      .then(setSavedScripts)
+      .catch(() => undefined);
+  }, []);
+
+  const activeSteps = selectedScript
+    ? selectedScript.steps.map((s, i) => ({ id: String(i), title: s.title, description: s.description, duration: s.duration }))
+    : DEFAULT_SCRIPT;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const recorder = useAudioRecorder();
+  const script = useWorkathonScript(activeSteps, recorder.status === 'recording');
+
+  const stepContext = script.currentStep
+    ? `Étape ${script.stepIndex + 1}/${script.totalSteps} — ${script.currentStep.title} (durée : ${script.currentStep.duration} minute${script.currentStep.duration > 1 ? 's' : ''}): ${script.currentStep.description}`
+    : '';
+
+  const gemini = useGeminiLive(recorder.status === 'recording', stepContext);
 
   const pollForCompletion = useCallback(
     (sid: string) => {
@@ -42,25 +71,43 @@ export function SessionPage() {
     [navigate],
   );
 
-  const handleSubmit = async () => {
-    if (!selectedFile) return;
-    setPhaseError(null);
+  const handleSubmit = useCallback(
+    async (audioSource: Blob | File) => {
+      setPhaseError(null);
 
-    try {
-      const title = sessionTitle.trim() || selectedFile.name.replace(/\.[^.]+$/, '');
-      const session = await api.createSession(title);
+      try {
+        const title =
+          sessionTitle.trim() ||
+          (audioSource instanceof File
+            ? audioSource.name.replace(/\.[^.]+$/, '')
+            : `Session ${new Date().toLocaleString('fr-FR')}`);
+        const session = await api.createSession(title);
 
-      setUploadPhase('uploading');
-      setUploadProgress(0);
+        setUploadPhase('uploading');
+        setUploadProgress(0);
 
-      await api.uploadAudio(session.id, selectedFile, setUploadProgress);
-      setUploadPhase('processing');
-      pollForCompletion(session.id);
-    } catch (err) {
-      setUploadPhase('error');
-      setPhaseError(err instanceof Error ? err.message : 'Erreur lors de l\'envoi');
+        await api.uploadAudio(session.id, audioSource, setUploadProgress, speakersExpected);
+        setUploadPhase('processing');
+        pollForCompletion(session.id);
+      } catch (err) {
+        setUploadPhase('error');
+        setPhaseError(err instanceof Error ? err.message : "Erreur lors de l'envoi");
+      }
+    },
+    [sessionTitle, pollForCompletion],
+  );
+
+  // Auto-upload when live recording stops and blob is ready
+  useEffect(() => {
+    if (
+      sourceMode === 'record' &&
+      recorder.status === 'stopped' &&
+      recorder.audioBlob &&
+      uploadPhase === 'idle'
+    ) {
+      void handleSubmit(recorder.audioBlob);
     }
-  };
+  }, [recorder.audioBlob, recorder.status, sourceMode, uploadPhase, handleSubmit]);
 
   const handleFileSelect = (file: File) => {
     setSelectedFile(file);
@@ -76,8 +123,22 @@ export function SessionPage() {
     }
   };
 
+  const handleSwitchMode = (mode: SourceMode) => {
+    if (uploadPhase !== 'idle') return;
+    setSourceMode(mode);
+    setSelectedFile(null);
+    setPhaseError(null);
+    if (recorder.status !== 'idle') recorder.reset();
+  };
+
   const isIdle = uploadPhase === 'idle';
   const showUpload = uploadPhase === 'uploading' || uploadPhase === 'processing';
+
+  const formatDuration = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  };
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -109,8 +170,92 @@ export function SessionPage() {
           </div>
         )}
 
-        {/* Drop zone */}
+        {/* Speakers count */}
         {isIdle && (
+          <div className="fade-in">
+            <label className="block text-xs font-mono text-muted-foreground uppercase tracking-widest mb-2.5">
+              Nombre de participants <span className="normal-case tracking-normal opacity-60">(optionnel)</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={speakersExpected ?? ''}
+              onChange={(e) => {
+                const v = parseInt(e.target.value, 10);
+                setSpeakersExpected(isNaN(v) || v < 1 ? undefined : v);
+              }}
+              placeholder="Ex. 4"
+              className="w-32 bg-card border border-border rounded-md px-4 py-3 text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-ring text-sm transition-colors"
+            />
+            <p className="mt-1.5 text-xs text-muted-foreground">
+              Améliore la précision de la diarisation si le nombre est connu.
+            </p>
+          </div>
+        )}
+
+        {/* Script selector */}
+        {isIdle && (
+          <div className="fade-in">
+            <div className="flex items-center justify-between mb-2.5">
+              <label className="block text-xs font-mono text-muted-foreground uppercase tracking-widest">
+                Script workathon
+              </label>
+              <Link
+                to="/scripts"
+                className="text-xs text-primary hover:text-primary/80 transition-colors font-mono"
+              >
+                Gérer les scripts →
+              </Link>
+            </div>
+            <select
+              value={selectedScript?.id ?? ''}
+              onChange={(e) => {
+                const found = savedScripts.find((s) => s.id === e.target.value) ?? null;
+                setSelectedScript(found);
+              }}
+              className="w-full bg-card border border-border rounded-md px-4 py-3 text-foreground focus:outline-none focus:ring-1 focus:ring-ring text-sm transition-colors appearance-none cursor-pointer"
+            >
+              <option value="">Script par défaut</option>
+              {savedScripts.map((s) => (
+                <option key={s.id} value={s.id}>{s.title}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Source mode toggle */}
+        {isIdle && (
+          <div className="flex rounded-lg border border-border bg-card p-1 gap-1 fade-in">
+            <button
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-medium transition-colors',
+                sourceMode === 'file'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => handleSwitchMode('file')}
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Fichier audio
+            </button>
+            <button
+              className={cn(
+                'flex-1 flex items-center justify-center gap-2 rounded-md px-4 py-2 text-xs font-medium transition-colors',
+                sourceMode === 'record'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => handleSwitchMode('record')}
+            >
+              <Mic className="w-3.5 h-3.5" />
+              Enregistrement direct
+            </button>
+          </div>
+        )}
+
+        {/* Drop zone — file mode */}
+        {isIdle && sourceMode === 'file' && (
           <div
             className={cn(
               'relative rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer',
@@ -174,14 +319,222 @@ export function SessionPage() {
           </div>
         )}
 
-        {/* Submit */}
-        {isIdle && (
+        {/* Recorder + Script — record mode */}
+        {isIdle && sourceMode === 'record' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 fade-in">
+            {/* Recorder panel */}
+            <div className="rounded-xl border border-border bg-card flex flex-col items-center gap-6 py-10 px-6">
+              {recorder.error && (
+                <p className="text-xs text-destructive font-mono">{recorder.error}</p>
+              )}
+
+              {recorder.status === 'recording' && (
+                <>
+                  <div className="flex items-end gap-0.5 h-10">
+                    {recorder.frequencyData.map((v, i) => (
+                      <div
+                        key={i}
+                        className="w-1 rounded-full bg-primary transition-all duration-75"
+                        style={{ height: `${Math.max(4, v * 40)}px`, opacity: 0.5 + v * 0.5 }}
+                      />
+                    ))}
+                  </div>
+                  <span className="font-mono text-2xl tabular-nums text-foreground">
+                    {formatDuration(recorder.duration)}
+                  </span>
+                </>
+              )}
+
+              {recorder.status === 'idle' || recorder.status === 'requesting' ? (
+                <Button
+                  size="lg"
+                  className="gap-2 rounded-full px-8"
+                  disabled={recorder.status === 'requesting'}
+                  onClick={() => void recorder.start()}
+                >
+                  <Mic className="w-4 h-4" />
+                  {recorder.status === 'requesting' ? 'Accès micro...' : 'Démarrer l\'enregistrement'}
+                </Button>
+              ) : (
+                <Button
+                  size="lg"
+                  variant="destructive"
+                  className="gap-2 rounded-full px-8"
+                  onClick={() => recorder.stop()}
+                >
+                  <Square className="w-4 h-4 fill-current" />
+                  Arrêter et envoyer
+                </Button>
+              )}
+
+              {recorder.status === 'recording' && recorder.isSilent && (
+                <p className="text-xs text-muted-foreground font-mono">Silence détecté…</p>
+              )}
+
+              {/* Gemini Live status */}
+              {recorder.status === 'recording' && (
+                <div className={cn(
+                  'flex items-center gap-2 text-xs font-mono px-3 py-1.5 rounded-full transition-colors',
+                  gemini.isSpeaking
+                    ? 'bg-primary/10 text-primary'
+                    : gemini.isListening
+                      ? 'bg-muted text-muted-foreground'
+                      : 'bg-muted/50 text-muted-foreground/50',
+                )}>
+                  <span className={cn(
+                    'w-1.5 h-1.5 rounded-full',
+                    gemini.isSpeaking
+                      ? 'bg-primary animate-pulse'
+                      : gemini.isListening
+                        ? 'bg-green-500 animate-pulse'
+                        : 'bg-muted-foreground/30',
+                  )} />
+                  {gemini.isSpeaking
+                    ? 'IA en train de répondre…'
+                    : gemini.isListening
+                      ? 'IA à l\'écoute'
+                      : 'IA non connectée'}
+                </div>
+              )}
+              {recorder.status === 'idle' && (
+                <p className="text-xs text-muted-foreground text-center">
+                  L'enregistrement sera envoyé automatiquement à l'arrêt.
+                </p>
+              )}
+            </div>
+
+            {/* Script panel */}
+            <div className="rounded-xl border border-border bg-card flex flex-col gap-0 overflow-hidden">
+              {/* Header */}
+              <div className="px-5 pt-5 pb-4 border-b border-border">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-mono text-muted-foreground uppercase tracking-widest">
+                    Script workathon
+                  </p>
+                  <span className="text-xs font-mono text-muted-foreground">
+                    {script.stepIndex + 1} / {script.totalSteps}
+                  </span>
+                </div>
+
+                {/* Step progress dots */}
+                <div className="flex gap-1 mt-2">
+                  {activeSteps.map((_, i) => (
+                    <div
+                      key={i}
+                      className={cn(
+                        'h-1 flex-1 rounded-full transition-colors duration-300',
+                        i < script.stepIndex
+                          ? 'bg-primary/60'
+                          : i === script.stepIndex
+                            ? 'bg-primary'
+                            : 'bg-border',
+                      )}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              {/* Current step */}
+              <div className="flex-1 px-5 py-5 flex flex-col gap-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="font-display font-bold text-foreground text-base leading-tight">
+                    {script.currentStep?.title}
+                  </h3>
+                  {script.isSpeaking && (
+                    <Volume2 className="w-4 h-4 text-primary animate-pulse shrink-0 mt-0.5" />
+                  )}
+                </div>
+
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  {script.currentStep?.description}
+                </p>
+
+                {/* Countdown */}
+                {recorder.status === 'recording' && (
+                  <div className="mt-auto">
+                    <div className="flex items-end justify-between mb-1.5">
+                      <span className="text-xs font-mono text-muted-foreground">Temps restant</span>
+                      <span className={cn(
+                        'font-mono text-xl tabular-nums font-semibold',
+                        script.secondsLeft <= 60 ? 'text-amber-400' : 'text-foreground',
+                      )}>
+                        {String(Math.floor(script.secondsLeft / 60)).padStart(2, '0')}
+                        :
+                        {String(script.secondsLeft % 60).padStart(2, '0')}
+                      </span>
+                    </div>
+                    <Progress
+                      value={
+                        ((script.currentStep?.duration ?? 1) * 60 - script.secondsLeft) /
+                        ((script.currentStep?.duration ?? 1) * 60) *
+                        100
+                      }
+                      className={cn(script.secondsLeft <= 60 && '[&>div]:bg-amber-400')}
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Navigation */}
+              {recorder.status === 'recording' && (
+                <div className="px-5 pb-5 flex items-center justify-between">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-muted-foreground"
+                    disabled={script.stepIndex === 0}
+                    onClick={script.goToPrev}
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                    Précédent
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1.5 text-muted-foreground"
+                    disabled={script.isLast}
+                    onClick={script.goToNext}
+                  >
+                    Suivant
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </Button>
+                </div>
+              )}
+
+              {/* Step list (collapsed, not recording) */}
+              {recorder.status !== 'recording' && (
+                <div className="px-5 pb-5 space-y-1.5">
+                  {activeSteps.map((step, i) => (
+                    <div key={step.id} className="flex items-center gap-2.5">
+                      <div className={cn(
+                        'w-1.5 h-1.5 rounded-full shrink-0',
+                        i === 0 ? 'bg-primary' : 'bg-border',
+                      )} />
+                      <span className={cn(
+                        'text-xs font-mono',
+                        i === 0 ? 'text-foreground' : 'text-muted-foreground',
+                      )}>
+                        {step.title}
+                      </span>
+                      <span className="text-xs font-mono text-muted-foreground ml-auto">
+                        {step.duration} min
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Submit — file mode only */}
+        {isIdle && sourceMode === 'file' && (
           <div className="flex justify-end fade-in">
             <Button
               size="lg"
               className="gap-2"
               disabled={!selectedFile}
-              onClick={() => void handleSubmit()}
+              onClick={() => selectedFile && void handleSubmit(selectedFile)}
             >
               <Upload className="w-4 h-4" />
               Envoyer et analyser

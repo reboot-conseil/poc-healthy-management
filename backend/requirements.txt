@@ -26,6 +26,10 @@ langchain-core>=0.3.0
 # This supersedes the deprecated langchain-google-vertexai / ChatVertexAI.
 langchain-google-genai>=4.0.0
 
+# Google GenAI (Gemini Live relay — Vertex AI service account)
+google-genai>=1.0.0
+google-auth>=2.28.0
+
 # Configuration
 python-dotenv>=1.0.0
 pydantic-settings>=2.0.0
