@@ -9,8 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@elevenlabs/react": "^0.15.0",
     "@google/genai": "^1.46.0",
+    "@mascotbot-sdk/react": "file:../../../../../Downloads/mascotbot-sdk-react-0.1.9.tgz",
     "@radix-ui/react-slot": "^1.0.2",
+    "@rive-app/react-webgl2": "^4.27.3",
     "class-variance-authority": "^0.7.0",
     "clsx": "^2.1.0",
     "lucide-react": "^0.344.0",

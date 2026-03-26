@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 # Import models so Base.metadata is populated before create_all
 import app.models  # noqa: F401
-from app.api import reports, scripts, sessions, tts
+from app.api import elevenlabs_signed_url, live_token, reports, scripts, sessions, tts
 from app.config import settings
 from app.db.database import Base, engine
 
@@ -116,3 +116,5 @@ app.include_router(sessions.router)
 app.include_router(reports.router)
 app.include_router(scripts.router)
 app.include_router(tts.router)
+app.include_router(live_token.router)
+app.include_router(elevenlabs_signed_url.router)

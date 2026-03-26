@@ -70,7 +70,9 @@ async def tts_relay(websocket: WebSocket) -> None:
         text: str = payload.get("text", "").strip()
 
         if not text:
-            await websocket.send_text(json.dumps({"type": "error", "message": "Empty text"}))
+            await websocket.send_text(
+                json.dumps({"type": "error", "message": "Empty text"})
+            )
             return
 
         client = _get_client()
@@ -159,12 +161,8 @@ async def live_relay(websocket: WebSocket) -> None:
 
     try:
         async with client.aio.live.connect(model=_MODEL, config=config) as session:
-            t_client = asyncio.create_task(
-                _forward_from_client(websocket, session)
-            )
-            t_gemini = asyncio.create_task(
-                _forward_from_gemini(session, websocket)
-            )
+            t_client = asyncio.create_task(_forward_from_client(websocket, session))
+            t_gemini = asyncio.create_task(_forward_from_gemini(session, websocket))
             done, pending = await asyncio.wait(
                 [t_client, t_gemini],
                 return_when=asyncio.FIRST_COMPLETED,

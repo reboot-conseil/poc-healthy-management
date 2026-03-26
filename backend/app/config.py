@@ -51,6 +51,16 @@ class Settings(BaseSettings):
     GOOGLE_CLOUD_LOCATION: str = "us-central1"  # Vertex AI region
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
+    # Gemini API key (AI Studio) — used for ephemeral token generation for live sessions
+    GEMINI_API_KEY: str = ""
+
+    # Mascotbot API key — used to exchange Google ephemeral tokens for Mascotbot-wrapped tokens
+    MASCOT_BOT_API_KEY: str = ""
+
+    # ElevenLabs — conversational AI avatar
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_AGENT_ID: str = ""
+
     # Full JSON content of a GCP service account key file.
     # Leave empty locally (ADC via gcloud is used instead).
     # On Railway: paste the entire service account JSON as this env var value.
