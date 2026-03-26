@@ -16,6 +16,7 @@ export interface WorkathonScriptState {
 export function useWorkathonScript(
   steps: WorkathonStep[],
   active: boolean,
+  silent = false,
 ): WorkathonScriptState {
   const [stepIndex, setStepIndex] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState((steps[0]?.duration ?? 0) * 60);
@@ -51,11 +52,12 @@ export function useWorkathonScript(
     secondsRef.current = total;
     setSecondsLeft(total);
 
-    setIsSpeaking(true);
-    console.log('[Script] calling speak() for step:', step.title);
-    void speak(step.description)
-      .catch((err: unknown) => console.error('[TTS] speak failed:', err))
-      .finally(() => setIsSpeaking(false));
+    if (!silent) {
+      setIsSpeaking(true);
+      void speak(step.description)
+        .catch((err: unknown) => console.error('[TTS] speak failed:', err))
+        .finally(() => setIsSpeaking(false));
+    }
 
     timerRef.current = setInterval(() => {
       secondsRef.current -= 1;
