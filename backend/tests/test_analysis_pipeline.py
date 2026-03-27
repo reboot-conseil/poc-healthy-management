@@ -196,6 +196,7 @@ class TestReportNode:
                 "text": "Bonjour.",
                 "intention": "Saluer",
                 "sentiment": "positif",
+                "key_points": [],
                 "issues": [],
             },
             {
@@ -205,16 +206,19 @@ class TestReportNode:
                 "text": "Commençons.",
                 "intention": "Lancer la réunion",
                 "sentiment": "neutre",
+                "key_points": ["Démarrage de la session"],
                 "issues": ["Manque d'introduction"],
             },
         ]
 
     def test_generates_report_with_correct_structure(self):
-        """report_node must set state['report'] with synthesis, improvement_axes, utterances."""
+        """report_node must set state['report'] with synthesis_human, synthesis_content, key_topics, improvement_axes, utterances."""
         state = _make_state(analyzed_utterances=self._make_analyzed())
 
         mock_result = MagicMock()
-        mock_result.synthesis = "La session s'est bien déroulée dans l'ensemble."
+        mock_result.synthesis_human = "La session s'est bien déroulée dans l'ensemble."
+        mock_result.synthesis_content = "Les participants ont abordé la question des délais."
+        mock_result.key_topics = ["Délais", "Budget"]
         mock_result.improvement_axes = ["Améliorer les introductions", "Clarifier les objectifs"]
 
         with patch("app.pipeline.graph.FINAL_REPORT_PROMPT") as mock_prompt:
@@ -226,17 +230,21 @@ class TestReportNode:
 
         report = new_state["report"]
         assert report is not None
-        assert report["synthesis"] == "La session s'est bien déroulée dans l'ensemble."
+        assert report["synthesis_human"] == "La session s'est bien déroulée dans l'ensemble."
+        assert report["synthesis_content"] == "Les participants ont abordé la question des délais."
+        assert report["key_topics"] == ["Délais", "Budget"]
         assert len(report["improvement_axes"]) == 2
         assert "Améliorer les introductions" in report["improvement_axes"]
         assert len(report["utterances"]) == 2
 
     def test_report_utterances_preserve_all_fields(self):
-        """Each utterance in the report must have all required fields."""
+        """Each utterance in the report must have all required fields including key_points."""
         state = _make_state(analyzed_utterances=self._make_analyzed())
 
         mock_result = MagicMock()
-        mock_result.synthesis = "Synthèse."
+        mock_result.synthesis_human = "Synthèse humaine."
+        mock_result.synthesis_content = "Synthèse contenu."
+        mock_result.key_topics = []
         mock_result.improvement_axes = ["Axe 1"]
 
         with patch("app.pipeline.graph.FINAL_REPORT_PROMPT") as mock_prompt:
@@ -246,7 +254,7 @@ class TestReportNode:
 
             new_state = report_node(state)
 
-        required_keys = {"speaker", "start", "end", "text", "intention", "sentiment", "issues"}
+        required_keys = {"speaker", "start", "end", "text", "intention", "sentiment", "key_points", "issues"}
         for u in new_state["report"]["utterances"]:
             assert required_keys.issubset(u.keys())
 
@@ -255,7 +263,9 @@ class TestReportNode:
         state = _make_state(analyzed_utterances=self._make_analyzed())
 
         mock_result = MagicMock()
-        mock_result.synthesis = "test"
+        mock_result.synthesis_human = "test humain"
+        mock_result.synthesis_content = "test contenu"
+        mock_result.key_topics = []
         mock_result.improvement_axes = []
 
         with patch("app.pipeline.graph.FINAL_REPORT_PROMPT") as mock_prompt:
