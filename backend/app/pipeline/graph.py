@@ -42,6 +42,10 @@ class UtteranceAnalysis(BaseModel):
 
     intention: str = Field(description="Main intention of the speaker in one short sentence")
     sentiment: str = Field(description="One of: positif, négatif, neutre, mitigé")
+    key_points: list[str] = Field(
+        default_factory=list,
+        description="Concrete substance: specific facts, topics, ideas, decisions or blockers mentioned; empty if none",
+    )
     issues: list[str] = Field(
         default_factory=list,
         description="List of communication issues detected; empty if none",
@@ -61,11 +65,24 @@ class UtteranceBatchAnalysis(BaseModel):
 
 
 class FinalReportContent(BaseModel):
-    """Structured output expected from the LLM for the final report."""
+    """Structured output expected from the LLM for the final report.
 
-    synthesis: str = Field(description="Global synthesis of the session in 3-5 paragraphs")
+    Two synthesis fields capture distinct dimensions of the session:
+    - synthesis_human   : relational/emotional quality of exchanges
+    - synthesis_content : concrete substance — topics, decisions, ideas, next steps
+    """
+
+    synthesis_human: str = Field(
+        description="Human/relational dimension: communication dynamics, emotional climate, group interaction quality"
+    )
+    synthesis_content: str = Field(
+        description="Content dimension: topics discussed, decisions made, key ideas, blockers, next steps"
+    )
+    key_topics: list[str] = Field(
+        description="Ordered list of 5-10 key concrete topics or decisions raised in the session"
+    )
     improvement_axes: list[str] = Field(
-        description="Ordered list of concrete, actionable improvement recommendations"
+        description="Ordered list of concrete, actionable improvement recommendations specific to this session"
     )
 
 
@@ -274,7 +291,7 @@ def analyze_all_node(state: PipelineState) -> PipelineState:
             )
             while len(analyses) < len(batch):
                 analyses.append(
-                    UtteranceAnalysis(intention="N/A", sentiment="neutre", issues=[])
+                    UtteranceAnalysis(intention="N/A", sentiment="neutre", key_points=[], issues=[])
                 )
 
         for utterance, analysis in zip(batch, analyses):
@@ -283,6 +300,7 @@ def analyze_all_node(state: PipelineState) -> PipelineState:
                     **utterance,
                     "intention": analysis.intention,
                     "sentiment": analysis.sentiment,
+                    "key_points": analysis.key_points,
                     "issues": analysis.issues,
                 }
             )
@@ -302,12 +320,20 @@ def analyze_all_node(state: PipelineState) -> PipelineState:
 
 
 def _format_analysis_for_report(utterance: dict) -> str:
-    """Format a single analysed utterance as a concise line for the report prompt."""
+    """Format a single analysed utterance as a concise block for the report prompt.
+
+    Includes both the human-dimension fields (intention, sentiment, issues) and the
+    content-dimension field (key_points) so the report LLM has the full picture to
+    produce both synthesis_human and synthesis_content.
+    """
     issues_str = "; ".join(utterance.get("issues") or []) or "aucun"
+    key_points = utterance.get("key_points") or []
+    key_points_str = "; ".join(key_points) if key_points else "aucun"
     return (
         f"[{utterance['speaker']}] {utterance['text']}\n"
         f"  → intention: {utterance.get('intention', '?')} | "
         f"sentiment: {utterance.get('sentiment', '?')} | "
+        f"points clés: {key_points_str} | "
         f"problèmes: {issues_str}"
     )
 
@@ -344,7 +370,9 @@ def report_node(state: PipelineState) -> PipelineState:
     )
 
     report = {
-        "synthesis": result.synthesis,
+        "synthesis_human": result.synthesis_human,
+        "synthesis_content": result.synthesis_content,
+        "key_topics": result.key_topics,
         "improvement_axes": result.improvement_axes,
         "utterances": [
             {
@@ -354,6 +382,7 @@ def report_node(state: PipelineState) -> PipelineState:
                 "text": u["text"],
                 "intention": u.get("intention"),
                 "sentiment": u.get("sentiment"),
+                "key_points": u.get("key_points", []),
                 "issues": u.get("issues", []),
             }
             for u in state["analyzed_utterances"]

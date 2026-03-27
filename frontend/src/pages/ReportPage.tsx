@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, TrendingUp, AlertTriangle, Clock, ChevronDown } from 'lucide-react';
+import { ArrowLeft, TrendingUp, AlertTriangle, Clock, ChevronDown, Users, FileText, Tag } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Card, CardContent } from '../components/ui/card';
 import { Skeleton } from '../components/ui/skeleton';
@@ -89,6 +89,16 @@ function UtteranceRow({ utterance, idx, resolvedName, palette }: UtteranceRowPro
               <Badge variant="default" className="text-xs">{utterance.intention}</Badge>
             )}
             {utterance.sentiment && <SentimentBadge sentiment={utterance.sentiment} />}
+          </div>
+        )}
+
+        {utterance.key_points && utterance.key_points.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {utterance.key_points.map((pt, i) => (
+              <Badge key={i} variant="outline" className="text-xs text-muted-foreground border-border/60">
+                {pt}
+              </Badge>
+            ))}
           </div>
         )}
       </div>
@@ -253,8 +263,9 @@ export function ReportPage() {
         {/* Report tab */}
         {report && activeTab === 'report' && (
           <div className="space-y-10 fade-in">
-            {/* Synthesis */}
-            {report.content.synthesis && (
+
+            {/* Legacy synthesis (reports generated before dual-dimension update) */}
+            {!report.content.synthesis_human && !report.content.synthesis_content && report.content.synthesis && (
               <div>
                 <h2 className="font-display text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">
                   Synthèse
@@ -262,6 +273,60 @@ export function ReportPage() {
                 <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl whitespace-pre-line">
                   {report.content.synthesis}
                 </p>
+              </div>
+            )}
+
+            {/* Dimension humaine */}
+            {report.content.synthesis_human && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                  <h2 className="font-display text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                    Dimension humaine
+                  </h2>
+                </div>
+                <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl whitespace-pre-line">
+                  {report.content.synthesis_human}
+                </p>
+              </div>
+            )}
+
+            {/* Dimension contenu */}
+            {report.content.synthesis_content && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <FileText className="w-3.5 h-3.5 text-muted-foreground" />
+                  <h2 className="font-display text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                    Contenu &amp; Décisions
+                  </h2>
+                </div>
+                <p className="text-sm text-foreground/80 leading-relaxed max-w-2xl whitespace-pre-line">
+                  {report.content.synthesis_content}
+                </p>
+              </div>
+            )}
+
+            {/* Key topics */}
+            {report.content.key_topics && report.content.key_topics.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 mb-4">
+                  <Tag className="w-3.5 h-3.5 text-muted-foreground" />
+                  <h2 className="font-display text-xs font-bold text-muted-foreground uppercase tracking-widest">
+                    Sujets clés
+                  </h2>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {report.content.key_topics.map((topic, i) => (
+                    <Badge
+                      key={i}
+                      variant="secondary"
+                      className="text-xs px-2.5 py-1 fade-in"
+                      style={{ animationDelay: `${i * 40}ms` }}
+                    >
+                      {topic}
+                    </Badge>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -303,7 +368,7 @@ export function ReportPage() {
               </div>
             )}
 
-            {!report.content.synthesis && report.content.improvement_axes.length === 0 && (
+            {!report.content.synthesis_human && !report.content.synthesis_content && !report.content.synthesis && report.content.improvement_axes.length === 0 && (
               <p className="text-sm text-muted-foreground">Aucune synthèse disponible.</p>
             )}
           </div>

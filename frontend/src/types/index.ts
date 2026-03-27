@@ -31,13 +31,21 @@ export interface ReportUtterance {
   text: string;
   intention: string | null;
   sentiment: string | null;
+  key_points: string[];
   issues: string[];
 }
 
 export interface ReportContent {
   utterances: ReportUtterance[];
+  // Human/relational dimension
+  synthesis_human: string | null;
+  // Substantive content dimension (topics, decisions, ideas, next steps)
+  synthesis_content: string | null;
+  // Ordered list of key concrete topics raised in the session
+  key_topics: string[];
   improvement_axes: string[];
-  synthesis: string | null;
+  // Legacy field — present on reports generated before the dual-dimension update
+  synthesis?: string | null;
 }
 
 export interface Report {
