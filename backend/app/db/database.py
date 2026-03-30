@@ -10,6 +10,11 @@ engine = create_async_engine(
     # echo=True can be enabled temporarily for query debugging
     echo=False,
     pool_pre_ping=True,
+    pool_size=10,
+    max_overflow=10,
+    pool_recycle=300,          # recycle before Postgres idle timeout closes them
+    pool_timeout=5,            # fail fast instead of hanging indefinitely
+    connect_args={"timeout": 5},  # asyncpg TCP connect timeout in seconds
 )
 
 # Session factory used by both FastAPI dependency injection and background tasks
